@@ -11,11 +11,7 @@ def calcAccuracy(LPred, LTrue):
         acc (float): Prediction accuracy.
     """
 
-    # --------------------------------------------
-    # === Your code here =========================
-    # --------------------------------------------
     acc = np.mean(LPred == LTrue)
-    # ============================================
     return acc
 
 
@@ -30,17 +26,12 @@ def calcConfusionMatrix(LPred, LTrue):
         cM (array): Confusion matrix, with predicted labels in the rows
             and actual labels in the columns.
     """
-
-    # --------------------------------------------
-    # === Your code here =========================
-    # --------------------------------------------
-    TP = np.sum((LTrue == 1) & (LPred == 1))
-    TN = np.sum((LTrue == 0) & (LPred == 0))
-    FP = np.sum((LTrue == 0) & (LPred == 1))
-    FN = np.sum((LTrue == 1) & (LPred == 0))
-    cM = np.array([[TP, FN],
-                    [FP, TN]])
-    # ============================================
+    labels = np.unique(np.concatenate((LPred, LTrue)))
+    n_labels = len(labels)
+    cM = np.zeros((n_labels, n_labels), dtype=int)
+    for i, pred_label in enumerate(labels):
+        for j, true_label in enumerate(labels):
+            cM[i, j] = np.sum((LPred == pred_label) & (LTrue == true_label))
 
     return cM
 
@@ -56,10 +47,5 @@ def calcAccuracyCM(cM):
         acc (float): Prediction accuracy.
     """
 
-    # ------------1--------------------------------
-    # === Your code here =========================
-    # --------------------------------------------
-    acc = cM[0][0] / sum(cM)
-    # ============================================
-    
+    acc = np.trace(cM) / np.sum(cM)
     return acc
