@@ -436,6 +436,7 @@ def plotResultsOCR(X, L, LPred):
 
 
 def plotConfusionMatrixOCR(X, L, LPred):
+    test_accuracy = np.mean(LPred == L)
     canvas = np.zeros((107, 107))
     for i in range(10):
         for j in range(10):
@@ -453,7 +454,7 @@ def plotConfusionMatrixOCR(X, L, LPred):
     plt.xlabel("Actual class")
     plt.ylabel("Predicted class")
     plt.gca().xaxis.set_label_position("top")
-    plt.title("Examples cases from the confusion matrix")
+    plt.title(f"Examples from the confusion matrix\nTest Accuracy: {test_accuracy * 100:.2f}%")
     plt.show()
 
 
