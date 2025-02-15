@@ -506,8 +506,7 @@ def plotProgressNetwork(fig, W, B, metrics, cmap="coolwarm", n=None):
 
     # Colormap
     cm = plt.cm.get_cmap(cmap)
-    print(W.shape)
-    print(B.shape)
+
     # Normalize and center weights
     W = np.concatenate((W, B), axis=0)
     vmax = np.max([W.max(), -W.min()])
