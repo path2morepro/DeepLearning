@@ -1,12 +1,11 @@
 # IMPORTS
 import tensorflow as tf
-import tf_keras as keras
+from tensorflow import keras
 import tensorflow_probability as tfp
 
-from tf_keras.models import Sequential, Model
-from tf_keras.layers import Input, Dense, BatchNormalization, Dropout
-from tf_keras.optimizers import SGD, Adam
-import tensorflow_probability as tfp
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Input, Dense, BatchNormalization, Dropout, Activation
+from tensorflow.keras.optimizers import SGD, Adam
 
 from ray import train
 
@@ -45,7 +44,8 @@ def build_DNN(input_shape, n_hidden_layers, n_hidden_units, loss, act_fun='sigmo
     # === Your code here =========================
     # --------------------------------------------      
     # Setup optimizer, depending on input parameter string
-    optimizer = ???
+    if optimizer == 'sgd':
+        optimizer = eval(optimizer.upper() + f'(learning_rate={learning_rate})')
 
     # ============================================
 
@@ -58,17 +58,23 @@ def build_DNN(input_shape, n_hidden_layers, n_hidden_units, loss, act_fun='sigmo
     # Add layers to the model, using the input parameters of the build_DNN function
     
     # Add first (Input) layer, requires input shape
-    ???
+    model.add(Input(shape=input_shape))
     
     # Add remaining layers. These to not require the input shape since it will be infered during model compile
     for _ in range(n_hidden_layers):
-        ???
-         
+        model.add(Dense(n_hidden_units))
+        if use_bn:
+            model.add(BatchNormalization()) 
+        model.add(Activation(act_fun))
+        
+    if use_dropout:
+        model.add(Dropout(0.1))
     # Add final layer
-    ???
-    
+    model.add(Dense(1, activation='sigmoid'))
     # Compile model
-    model.compile(???)
+    model.compile(optimizer=optimizer, 
+                  loss=loss, 
+                  metrics=['accuracy'])
 
     # ============================================
     # Print model summary if requested
@@ -105,19 +111,19 @@ def train_DNN(config, data, training_config):
             self.iteration += 1
             train.report(dict(keras_info=logs, mean_accuracy=logs.get("accuracy"), mean_loss=logs.get("loss")))
     
-    # --------------------------------------------  
-    # === Your code here =========================
-    # --------------------------------------------
-    # Unpack the data tuple
-    X_train, y_train, X_val, y_val = ???
+    # # --------------------------------------------  
+    # # === Your code here =========================
+    # # --------------------------------------------
+    # # Unpack the data tuple
+    # X_train, y_train, X_val, y_val = ???
 
-    # Build the model using the variables stored into the config dictionary.
-    # Hint: you provide the config dictionary to the build_DNN function as a keyword argument using the ** operator.
-    model = ???
+    # # Build the model using the variables stored into the config dictionary.
+    # # Hint: you provide the config dictionary to the build_DNN function as a keyword argument using the ** operator.
+    # model = ???
         
-    # Train the model (no need to save the history, as the callback will log the results).
-    # Remember to add the TuneReporterCallback() to the list of callbacks.
-    model.fit(???) 
+    # # Train the model (no need to save the history, as the callback will log the results).
+    # # Remember to add the TuneReporterCallback() to the list of callbacks.
+    # model.fit(???) 
 
     # --------------------------------------------
 
