@@ -66,9 +66,8 @@ def build_DNN(input_shape, n_hidden_layers, n_hidden_units, loss, act_fun='sigmo
         if use_bn:
             model.add(BatchNormalization()) 
         model.add(Activation(act_fun))
-        
-    if use_dropout:
-        model.add(Dropout(0.1))
+        if use_dropout:
+            model.add(Dropout(0.5))
     # Add final layer
     model.add(Dense(1, activation='sigmoid'))
     # Compile model
