@@ -1,11 +1,11 @@
 # IMPORTS
 import tensorflow as tf
-from tensorflow import keras
+import tf_keras as keras
 import tensorflow_probability as tfp
 
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Input, Dense, BatchNormalization, Dropout, Activation
-from tensorflow.keras.optimizers import SGD, Adam
+from tf_keras.models import Sequential, Model
+from tf_keras.layers import Input, Dense, BatchNormalization, Dropout, Activation
+from tf_keras.optimizers import SGD, Adam
 
 from ray import train
 
@@ -56,20 +56,41 @@ def build_DNN(input_shape, n_hidden_layers, n_hidden_units, loss, act_fun='sigmo
     # === Your code here =========================
     # --------------------------------------------
     # Add layers to the model, using the input parameters of the build_DNN function
-    
+
     # Add first (Input) layer, requires input shape
     model.add(Input(shape=input_shape))
-    
+    kl_weight = 0.01
+
     # Add remaining layers. These to not require the input shape since it will be infered during model compile
-    for _ in range(n_hidden_layers):
-        model.add(Dense(n_hidden_units))
+    for i in range(n_hidden_layers):
+        if use_variational_layer:
+            model.add(tfp.layers.DenseVariational(
+                units=n_hidden_units,
+                make_posterior_fn=posterior,
+                make_prior_fn=prior,
+                kl_weight=kl_weight,
+                activation=act_fun
+            ))
+        else:
+            model.add(Dense(n_hidden_units, activation = act_fun))
         if use_bn:
-            model.add(BatchNormalization()) 
-        model.add(Activation(act_fun))
-        if use_dropout:
+            model.add(BatchNormalization())
+
+        if use_custom_dropout:
+            model.add(myDropout(0.5))
+        elif use_dropout:
             model.add(Dropout(0.5))
     # Add final layer
-    model.add(Dense(1, activation='sigmoid'))
+        if use_variational_layer:
+            model.add(tfp.layers.DenseVariational(
+                units=1,
+                make_posterior_fn=posterior,
+                make_prior_fn=prior,
+                kl_weight=kl_weight,
+                activation="sigmoid"
+            ))
+        else:
+            model.add(Dense(1, activation = "sigmoid"))
     # Compile model
     model.compile(optimizer=optimizer, 
                   loss=loss, 
@@ -98,33 +119,31 @@ def train_DNN(config, data, training_config):
     # A dedicated callback function is needed to allow Ray Tune to track the training process
     # This callback will be used to log the loss and accuracy of the model during training
     class TuneReporterCallback(keras.callbacks.Callback):
-        """Tune Callback for Keras.
-        
-        The callback is invoked every epoch.
-        """
-        def __init__(self, logs={}):
-            self.iteration = 0
+        def __init__(self):
             super(TuneReporterCallback, self).__init__()
-    
-        def on_epoch_end(self, batch, logs={}):
-            self.iteration += 1
-            train.report(dict(keras_info=logs, mean_accuracy=logs.get("accuracy"), mean_loss=logs.get("loss")))
-    
-    # # --------------------------------------------  
-    # # === Your code here =========================
-    # # --------------------------------------------
-    # # Unpack the data tuple
-    # X_train, y_train, X_val, y_val = ???
 
-    # # Build the model using the variables stored into the config dictionary.
-    # # Hint: you provide the config dictionary to the build_DNN function as a keyword argument using the ** operator.
-    # model = ???
-        
-    # # Train the model (no need to save the history, as the callback will log the results).
-    # # Remember to add the TuneReporterCallback() to the list of callbacks.
-    # model.fit(???) 
+        def on_epoch_end(self, epoch, logs=None):
+            if logs is None:
+                logs = {}
+            # Log accuracy, loss, etc. to Ray Tune
+            train.report({
+                "mean_accuracy": logs.get("accuracy"),  # or logs.get("acc") if using older TF versions
+                "mean_loss": logs.get("loss"),
+                "val_accuracy": logs.get("val_accuracy"),
+                "val_loss": logs.get("val_loss"),
+            })
 
-    # --------------------------------------------
+    X_train, y_train, X_val, y_val = data
+    model = build_DNN(**config)
+    model.fit(
+        X_train,
+        y_train,
+        validation_data=(X_val, y_val),
+        epochs=training_config.get("epochs", 10),
+        batch_size=training_config.get("batch_size", 32),
+        callbacks=[TuneReporterCallback()],
+        verbose=0
+    )
 
 
 # CUSTOM DROPOUT IMPLEMENTATION
@@ -163,7 +182,6 @@ def posterior(kernel_size, bias_size, dtype=None):
         ]
     )
     return posterior_model
-
 
 # =======================================
 # PLOTTING FUNCTIONS
