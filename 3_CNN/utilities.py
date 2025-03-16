@@ -1,10 +1,11 @@
 # IMPORTS
 import tensorflow as tf
-import tf_keras as keras
+import tensorflow.keras as keras
 
-from tf_keras.models import Sequential, Model
-from tf_keras.layers import Input, Dense, BatchNormalization, Dropout, Conv2D, MaxPooling2D, Flatten
-from tf_keras.optimizers import SGD, Adam
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Input, Dense, BatchNormalization, Dropout, Conv2D, MaxPooling2D, Flatten
+from tensorflow.keras.optimizers import SGD, Adam
+from tensorflow.keras.regularizers import l2
 
 # Set seed from random number generator, for better comparisons
 import numpy as np
@@ -29,9 +30,10 @@ def build_CNN(input_shape, loss,
                 n_nodes:int=50, 
                 use_dropout:bool=False, 
                 learning_rate:float=0.01, 
-                act_fun='sigmoid', 
+                act_fun='relu', 
                 optimizer:str='sgd',
-                print_summary:bool=False):
+                print_summary:bool=False,
+                l2_regularization = False):
     """
     Builds a Convolutional Neural Network (CNN) model based on the provided parameters.
     
@@ -57,8 +59,10 @@ def build_CNN(input_shape, loss,
     # --------------------------------------------  
 
     # Setup optimizer, depending on input parameter string
-    ???
-    
+    if optimizer == 'sgd':
+        optimizer = SGD(learning_rate=learning_rate)
+    elif optimizer == "adam":
+        optimizer = Adam(learning_rate=learning_rate)
     # ============================================
     
     # Setup a sequential model
@@ -67,23 +71,63 @@ def build_CNN(input_shape, loss,
     # --------------------------------------------
     # === Your code here =========================
     # --------------------------------------------  
-    
     # Add convolutional layers
-    for i in range(???):
-        ???
+    if l2_regularization:
+        model.add(Conv2D(n_filters, 
+                kernel_size=(3, 3), 
+                activation=act_fun, 
+                strides=(1, 1),
+                use_bias=True,
+                padding='same',
+                kernel_regularizer=l2(0.03)))
+        model.add(MaxPooling2D((2, 2)))
+        for i in range(n_conv_layers-1):
+            model.add(Conv2D(n_filters, 
+                            kernel_size=(3, 3), 
+                            activation=act_fun, 
+                            strides=(1, 1),
+                            use_bias=True,
+                            padding='same',
+                            kernel_regularizer=l2(0.03)))
+            model.add(MaxPooling2D((2, 2)))
+
+    else:
+        model.add(Conv2D(n_filters, 
+                                kernel_size=(3, 3), 
+                                activation=act_fun, 
+                                strides=(1, 1),
+                                use_bias=True,
+                                input_shape=input_shape,
+                                padding='same'))
+        model.add(MaxPooling2D((2, 2)))
+        for i in range(n_conv_layers-1):
+            model.add(Conv2D(n_filters, 
+                            kernel_size=(3, 3), 
+                            activation=act_fun, 
+                            strides=(1, 1),
+                            use_bias=True,
+                            padding='same'))
+            model.add(MaxPooling2D((2, 2)))
     
     # Flatten the output of the convolutional layers
-    ???
+    model.add(Flatten())
+    
     
     # Add dense layers
-    for i in range(???):
-        ???
-    
+    for i in range(n_dense_layers):
+        model.add(Dense(n_nodes, activation=act_fun))
+        if use_dropout:
+            model.add(Dropout(0.5))
+    # I searched some information, it is said that
+    # it is easy to overfit after dense layer
+
     # Add output layer
-    ???
+    model.add(Dense(10, activation='softmax'))
     
     # Compile the model
-    ???
+    model.compile(optimizer=optimizer, 
+                  loss=loss, 
+                  metrics=['accuracy'])
 
     # ============================================
 
