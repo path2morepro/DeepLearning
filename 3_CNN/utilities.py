@@ -72,43 +72,21 @@ def build_CNN(input_shape, loss,
     # === Your code here =========================
     # --------------------------------------------  
     # Add convolutional layers
-    if l2_regularization:
-        model.add(Conv2D(n_filters, 
-                kernel_size=(3, 3), 
-                activation=act_fun, 
-                strides=(1, 1),
-                use_bias=True,
-                padding='same',
-                kernel_regularizer=l2(0.03)))
-        model.add(MaxPooling2D((2, 2)))
-        for i in range(n_conv_layers-1):
-            model.add(Conv2D(n_filters, 
-                            kernel_size=(3, 3), 
-                            activation=act_fun, 
-                            strides=(1, 1),
-                            use_bias=True,
-                            padding='same',
-                            kernel_regularizer=l2(0.03)))
-            model.add(MaxPooling2D((2, 2)))
+    model.add(Input(shape=input_shape)) 
+    for i in range(n_conv_layers):
+        filters = n_filters * (2 ** i)  
+        conv_args = {
+            "filters": filters,
+            "kernel_size": (3, 3),
+            "activation": "relu",
+            "padding": "same",
+            "kernel_regularizer": l2(0.03) if l2_regularization else None
+        }
 
-    else:
-        model.add(Conv2D(n_filters, 
-                                kernel_size=(3, 3), 
-                                activation=act_fun, 
-                                strides=(1, 1),
-                                use_bias=True,
-                                input_shape=input_shape,
-                                padding='same'))
-        model.add(MaxPooling2D((2, 2)))
-        for i in range(n_conv_layers-1):
-            model.add(Conv2D(n_filters, 
-                            kernel_size=(3, 3), 
-                            activation=act_fun, 
-                            strides=(1, 1),
-                            use_bias=True,
-                            padding='same'))
-            model.add(MaxPooling2D((2, 2)))
-    
+
+        model.add(Conv2D(**conv_args))
+        model.add(BatchNormalization())
+        model.add(MaxPooling2D(pool_size=(2, 2)))
     # Flatten the output of the convolutional layers
     model.add(Flatten())
     
