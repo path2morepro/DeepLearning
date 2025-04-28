@@ -45,17 +45,28 @@ def scaled_dot_product_attention(q, k, v):
     # --------------------------------------------
 
     # Compute the dot product between queries and keys.
-    matmul_qk = ...  # Shape: (batch_size, num_heads, seq_len_q, seq_len_k)
+    matmul_qk = tf.matmul(q, k, transpose_b=True)
+    # 第一个问题： 这个维度怎么感觉匹配不上啊？
+    # 仅仅在最后两个维度做transpose
+    # Shape: (batch_size, num_heads, seq_len_q, seq_len_k)
 
     # Scale the dot products by the square root of the depth.
-    dk = ...
-    scaled_attention_logits = ...
+    dk = tf.cast(tf.shape(k)[-1], tf.float32)
+    # 第二个问题： 我好像取depth取不出来啊
+    # 好多操作都是tensorflow的内置函数......
+    scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
 
     # Apply the softmax function to obtain the attention weights (use tf.nn.softmax).
-    attention_weights = ...  # Shape: (batch_size, num_heads, seq_len_q, seq_len_k)
+    attention_weights = tf.nn.softmax(scaled_attention_logits)  
+    # Shape: (batch_size, num_heads, seq_len_q, seq_len_k)
 
     # Compute the weighted sum of the values.
-    output = ...  # Shape: (batch_size, num_heads, seq_len_q, depth)
+    output = tf.matmul(attention_weights, v)
+    # 第三个问题：这里怎么不transpose?
+    # attention_weights: (bs, heads, seq_len_q, sen_len_k)
+    # v: (batch_size, num_heads, seq_len_v, depth)
+    # seq_len_v == seq_len_k 所以刚好
+    # Shape: (batch_size, num_heads, seq_len_q, depth)
 
     # ============================================
 
@@ -80,6 +91,8 @@ class MultiHeadAttention(layers.Layer):
 
         # define initializer function
         initializer = tf.keras.initializers.GlorotUniform()
+        # 这是干嘛的？
+        # 参数初始化类
 
         # --------------------------------------------
         # === Your code here =========================
@@ -87,11 +100,15 @@ class MultiHeadAttention(layers.Layer):
 
         # Initialize the weights for the projection layers. Note that here we are combining all the heads together.
         # Remember to set the trainable parameter to True
-        self.WQ = tf.Variable(...)  # of shape (n_heads, proj_size, dq=dk)
-        self.WK = tf.Variable(...)  # of shape (n_heads, proj_size, dk=dq)
-        self.WV = tf.Variable(...)  # of shape (n_heads, proj_size, dv)
-        self.WO = tf.Variable(...)  # of shape (n_heads*proj_size, proj_size)
-
+        self.WQ = tf.Variable(initializer(shape=(n_heads, dk, proj_size)), trainable=True)  # of shape (n_heads, proj_size, dq=dk)
+        self.WK = tf.Variable(initializer(shape=(n_heads, dk, proj_size)), trainable=True)  # of shape (n_heads, proj_size, dk=dq)
+        self.WV = tf.Variable(initializer(shape=(n_heads, dv, proj_size)), trainable=True)  # of shape (n_heads, proj_size, dv)
+        self.WO = tf.Variable(initializer(shape=(n_heads*proj_size, proj_size)), trainable=True) # of shape (n_heads*proj_size, proj_size)
+        # project_size到底代表什么啊？
+        # project_size：输入向量的原始维度
+        # dv/dk：投影后的每头的小维度
+        # 注释写错了妈的
+ 
         # ============================================
 
         # print(f"WQ shape: {self.WQ.shape}")
@@ -125,33 +142,32 @@ class MultiHeadAttention(layers.Layer):
         # Projecting Q,K,V to Qh, Kh, Vh. The H projection are stacked on the along the second-to-last axis.
         # NOTE : here one needs to use tf.experimental.numpy.dot instead of tf.matmul as the former supports broadcasting.
 
-        Qh = tf.experimental.numpy.dot(
-            ...
-        )  # of shape (batch_size, number_of_Q, n_heads, dk=dq)
-        Kh = tf.experimental.numpy.dot(
-            ...
-        )  # of shape (batch_size, number_of_K, n_heads, dk=dq)
-        Vh = tf.experimental.numpy.dot(
-            ...
-        )  # of shape (batch_size, number_of_V, n_heads, dv)
-
+        # Qh: (bs, num_of_Q, dq)
+        # WQ: (n_heads, proj_size, dq)
+        Qh = tf.experimental.numpy.dot(Q, self.WQ)  # of shape (batch_size, number_of_Q, n_heads, dk=dq)
+        Kh = tf.experimental.numpy.dot(K, self.WK)  # of shape (batch_size, number_of_K, n_heads, dk=dq)
+        Vh = tf.experimental.numpy.dot(V, self.WV)  # of shape (batch_size, number_of_V, n_heads, dv)
+        
         # Bring the number of queries, keys, and their dimension to the last two axes so that we can use the scaled_dot_product_attention function
-        Qh = tf.transpose(...)  # of shape (batch_size, H, number_of_Q, proj_size)
-        Kh = tf.transpose(...)  # of shape (batch_size, H, number_of_K, proj_size)
-        Vh = tf.transpose(...)  # of shape (batch_size, H, number_of_V, proj_size)
-
+        # 这一步点积其实和n_heads没有关系，只是为了将dq消除而已，就是矩阵乘法中间的维度消失了,dp就应该是中间的维度
+        Qh = tf.transpose(Qh, perm=[0, 2, 1, 3])  # of shape (batch_size, H, number_of_Q, proj_size)
+        Kh = tf.transpose(Kh, perm=[0, 2, 1, 3])  # of shape (batch_size, H, number_of_K, proj_size)
+        Vh = tf.transpose(Vh, perm=[0, 2, 1, 3])  # of shape (batch_size, H, number_of_V, proj_size)
+        # print(f"Qh shape: {tf.shape(Qh)}")
+        # print(f"Kh shape: {tf.shape(Kh)}")
+        # print(f"Vh shape: {tf.shape(Vh)}")
         # Computing the dot-product attention
-        attention_pooling_h, attention_weights_h = scaled_dot_product_attention(
-            ...
-        )  # of shape (batch_size, n_heads, number_of_Q, proj_size)
+        attention_pooling_h, attention_weights_h = scaled_dot_product_attention(Qh, Kh, Vh)  # of shape (batch_size, n_heads, number_of_Q, proj_size)
 
         # Flattening (concatenate) across the number of heads.
-        A = tf.reshape(...)  # of shape (batch_size, number_of_Q, n_heads*proj_dim)
+        batch_size = tf.shape(attention_pooling_h)[0]
+        n_heads =  tf.shape(attention_pooling_h)[1]
+        num_of_Q =  tf.shape(attention_pooling_h)[2]
+        project_size =  tf.shape(attention_pooling_h)[3]
+        A = tf.reshape(attention_pooling_h, (batch_size, num_of_Q, n_heads * project_size))  # of shape (batch_size, number_of_Q, n_heads*proj_dim)
 
         # Projecting the concatenated heads to the output space
-        A = tf.experimental.numpy.dot(
-            ...
-        )  # of shape (batch_size, number_of_Q, proj_dim)
+        A = tf.experimental.numpy.dot(A, self.WO)  # of shape (batch_size, number_of_Q, proj_dim)
 
         # ============================================
 
@@ -177,11 +193,27 @@ def mlp(x, hidden_units, dropout_rate):
     # --------------------------------------------
     # === Your code here =========================
     # --------------------------------------------
+    # Input:
+    # (batch_size, number_of_Q, proj_dim)
+    # (batch_size, ...,  2048)
+    # (batch_size, number_of_Q,  proj_dim)
+    # 问题：中间维度是怎样变化的？或者说，dense是如何使得输入数据维度产生改变的
+    # 维度改变仅仅是因为W矩阵，那么我觉得中间维度还是num_of_Q
 
-    for units in hidden_units:
-        ...
-        ...
+    # 问题： 之前定义dense都是先定义再编译再训练，这次直接要求的是输出，怎么办？
+    # 定义好直接调用
 
+    # 问题：两层的units不一样啊......
+    # 如下...
+    for i, units in enumerate(hidden_units):
+        if i == len(hidden_units) - 1:
+            x = Dense(units, activation=None)(x)
+        else:
+            x = Dense(units, activation='relu')(x)
+            x = Dropout(dropout_rate)(x)
+
+    # 问题：Transformer的MLP最后一层不是不用激活函数么？
+    # 是的，所以改一下原来的结构吧
     # ============================================
     return x
 
@@ -204,27 +236,58 @@ def transformerBlock(x, num_heads, projection_dim, transformer_units, dropout_ra
     # --------------------------------------------
     # === Your code here =========================
     # --------------------------------------------
-
+    # 那么dv和dk怎么整呢？目前还不知道x的尺寸
+    # dv,dk应该是x的最后一维
+    dk = x.shape[-1]
     # apply the multi-head attention
-    attention_output = MultiHeadAttention(...)(
-        ...
-    )  # NOTE: here we are using the MultiHeadAttention layer to compute the SELF ATTENTION
+    # x (batch_size, num_patches, embedding_dim)
+    # print(f"shape of x is {tf.shape(x)}")
+    # attention_output (batch_size, number_of_Q, proj_dim)
+    # num_patches == number_of_Q
+    attention_output = MultiHeadAttention(num_heads, projection_dim, dk, dk)(x,x,x) 
+    # print(f"shape of attention_output is {tf.shape(attention_output)}")
+    # NOTE: here we are using the MultiHeadAttention layer to compute the SELF ATTENTION
+    # 他意思是这里直接返回计算后的结果？所以调用call()
+    # note的意思其实是：SELF ATTENTION， 所以传递参数的话，x,x,x
+    
 
     # apply dropout
-    attention_output = ...
-
+    attention_output = Dropout(dropout_rate)(attention_output)
+    # attention还有dropout?
+    # 防止注意力过于集中
+    
     # apply the skip connection and layer normalization
-    x1 = ...
-
+    x1 = attention_output + x
+    x1 = LayerNormalization(axis=-1)(x1)
+    # 这个batch normalization是不是加的不对
+    # 问题：对哪一个维度进行layerNormalization？
+    # 对最后一个维度进行标准化
+    # 问题：skip是从哪里到哪里的skip?
+    
     # apply the MLP
-    mlp_output = mlp(...)
+    # x1 (batch_size, number_of_Q, proj_dim)
+    # 经过中间层的x (batch_size, ...,  2048)
+    # mlp_output (batch_size, number_of_Q,  proj_dim)
+    # mlp parameters (x1, hidden_units, dropout_rate)
+    mlp_output = mlp(x1, transformer_units, dropout_rate)
+    # print(f"shape of mlp output is {tf.shape(mlp_output)}")
+    # 这里调用怎么不用加类名
+    #　问题：dense 的权重矩阵的维度和num_of_hidden有什么联系？
+    #　权重矩阵 W 的维度是 (input_dim, num_of_hidden)
 
     # apply dropout
-    mlp_output = ...
+    mlp_output = Dropout(dropout_rate)(mlp_output)
 
     # apply the skip connection and layer normalization
-    x2 = ...
+    # 我觉得这个加的也不对
+    x2 = mlp_output + x1
+    x2 = LayerNormalization(axis=-1)(x2)
 
+    # 这里和图片中的transformer结构不同
+    # 采用post-layernorlization: 在skpi connection之后添加layernormalization
+    # 图片中的结构采用pre-layernormalization
+    # 有什么区别呢？
+    # 后者适用于深层模型，避免梯度问题
     # ============================================
     return x2
 
@@ -258,14 +321,26 @@ class PatchExtractor(Layer):
         batch_size = tf.shape(images)[0]
 
         # Use the tf.image.extract_patches function to extract patches from the images (see documentation for details: https://www.tensorflow.org/api_docs/python/tf/image/extract_patches)
-        patches = tf.image.extract_patches(...)
+        size = [1, self.patch_size, self.patch_size, 1]
+        patches = tf.image.extract_patches(images=images,
+                                            sizes=size, 
+                                            strides=size,
+                                            rates=[1, 1, 1, 1],
+                                            padding='VALID')
+        # strides == sizes 不重叠不跳过
+        # 问题：返回值维度是多少？
+        # patches都被展平（flatten）到最后一个通道维度里去了
+        # patches: (batch_size, 2, 2, 16*16*3)
+        # 最后一维就是一个patch的embedding
 
         # get the dimensions of the patches tensor
-        patch_dims = ...
-
+        # 问题：这是在求什么？和patch_size的区别是？
+        # patch最后被embedding成了一个一维向量，现在在求这个向量的长度
+        patch_dims = patches.shape[-1]
+        num_patches = patches.shape[1] * patches.shape[2]
         # reshape the patches tensor to have the correct shape (batch_size, num_patches, patch_dims)
-        patches = tf.reshape(...)
-
+        patches = tf.reshape(tensor=patches, shape=[batch_size, num_patches, patch_dims])
+        # 设置成-1不会因为input层自动初始化batch size = None而报错
         # ============================================
         return patches
 
@@ -287,6 +362,7 @@ class PatchEncoder(Layer):
         w_init = tf.random_normal_initializer()
         class_token = w_init(shape=(1, projection_dim), dtype="float32")
         self.class_token = tf.Variable(initial_value=class_token, trainable=True)
+        # 这个为什么是trainable?
 
         # initialize the projection layer and the position embedding layer
         self.projection = Dense(units=projection_dim)
@@ -300,26 +376,47 @@ class PatchEncoder(Layer):
         # --------------------------------------------
 
         # get the batch size
-        batch = ...
+        batch_size = tf.shape(patch)[0]
+        # print(f"batch_size shape {batch_size}")
+        # 这里又要使用tf.shape取维度
+        # 因为batch_size是动态的
+        # 在测试里面等于None
 
         # Reshape the class token embeddings (first make as many copies as the batch size and then reshape)
+        # CLS: (1, projection_dim) -> CLS:(batch_size, 1, projection_dim)
         # Use the tf.tile function to make as many copies of the class token as the batch size (see documentation for details: https://www.tensorflow.org/api_docs/python/tf/tile)
-        class_token = tf.tile(...)
-        class_token = tf.reshape(...)  # shape: (batch_size, 1, projection_dim)
-
+        # print(f"class token size before expand {tf.shape(self.class_token)}")
+        class_token = tf.tile(self.class_token, [batch_size, 1])
+        # print(f"class token size after expand {class_token.shape}")
+        class_token = tf.reshape(tensor=class_token, shape=[batch_size, 1, self.projection_dim])  # shape: (batch_size, 1, projection_dim)
+        # print(f"class token size after reshape {class_token.shape}")
         # Project the patches using the projection layer
-        patches_embed = self.projection(...)
+        # 投影 patch embedding
+        # 把每个 patch 向量从原始的维度映射到 projection_dim
+        patches_embed = self.projection(patch)
         # patches_embed = patch
 
         # concatenate the class token to the patches
-        patches_embed = tf.concat(...)
+        patches_embed = tf.concat(values=[patches_embed, class_token], axis=1)
 
         # calculate positional embeddings based on the number of patches (how many positions?)
-        positions = tf.range(...)
-        positions_embed = self.position_embedding(...)
+        # 问题：位置编码是在给谁的位置编码，是patch在image中的位置么？
+        # 是的
+        num_of_positions = patch.shape[1] + 1
+        positions = tf.range(num_of_positions)
+        # position: (num_of_positions)
+        positions_embed = self.position_embedding(positions)
+        # positions_embed: (num_of_positions, projection_dim)
 
+        # 问题：这里直接相加么？
+        # 先扩展 positions_embed 使其形状变成 [1, num_of_positions, projection_dim]
+        positions_embed = tf.expand_dims(positions_embed, axis=0)
+        # 然后用tile扩展到 [batch_size, num_of_positions, projection_dim]
+        positions_embed = tf.tile(positions_embed, [batch_size, 1, 1])
         # add the positional embeddings to the patch embeddings
-        encoded = ...
+        # print(f"positions_embed {tf.shape(positions_embed)}")
+        # print(f"patches_embed {tf.shape(patches_embed)}")
+        encoded = patches_embed + positions_embed
 
         # ============================================
 
@@ -364,20 +461,27 @@ def create_vit_classifier(
     # --------------------------------------------
 
     # Define input layer
-    inputs = ...
-
+    inputs = Input(input_shape)
+    # print(f"input shape is {inputs.shape}")
     # Augment data (if provided)
     if data_augmentation is not None:
         inputs = data_augmentation(inputs)
 
     # Create patches.
-    patches = ...
+    patches_extractor = PatchExtractor(patch_size=patch_size)
+    # print(f"input shape is {inputs.shape}")
+    patches = patches_extractor(inputs)
 
     # Encode patches.
     ## Calculate the number of patches
-    num_patches = ...
+    num_patches = (input_shape[0] // patch_size) * (input_shape[1] // patch_size)
+    #这样取维度会引发错误
+    # tf.shape返回值是运行时的动态形状
+    # 只能现场计算了
+
     ## Encode the patches using the PatchEncoder layer
-    encoded_patches = ...
+    patch_encoder = PatchEncoder(num_patches=num_patches, projection_dim=embedding_proj_dim)
+    encoded_patches = patch_encoder(patches)
 
     # Create multiple layers of the Transformer block
     ## define mlp transformer units based on the msa_proj_dim
@@ -387,17 +491,27 @@ def create_vit_classifier(
     ]  # Size of the transformer layers
 
     for _ in range(transformer_layers):
-        encoded_patches = ...
+        # 问题: 在实现问题中,多层transformer是怎么实现的
+        # 或者具体一点, 他在循环什么?
+        encoded_patches = transformerBlock(x=encoded_patches,
+                                            num_heads=num_heads, 
+                                            projection_dim=msa_proj_dim,
+                                            transformer_units=transformer_units,
+                                            dropout_rate=msa_dropout_rate)
 
     # Take out the class token (it is the last token)
-    representation = ...
+    representation = encoded_patches[:, -1, :]
 
     # classification head applied to the class token
     ## Add mpl
-    features = ...
+    # 问题: 在transformerblock中定义过mlp之后最后出来还是要经过mlp分类?
+    # 是的
+    features = mlp(x=representation,
+                   hidden_units=mlp_classification_head_units,
+                   dropout_rate=mlp_classification_head_dropout_rate)
 
     ## features to the number of classes
-    logits = ...
+    logits = Dense(num_classes)(features)
 
     # ============================================
 
